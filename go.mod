@@ -1,4 +1,4 @@
-module util
+module github.com/weeaa/fly
 
 go 1.21
 

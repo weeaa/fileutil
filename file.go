@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/jszwec/csvutil"
 	"gopkg.in/yaml.v3"
+	"log"
 	"os"
 	"reflect"
 	"strings"
@@ -17,161 +18,12 @@ import (
 
 const (
 	folderPerm = 0777
-	filePerm   = 0666
+	filePerm   = 0777
 )
 
-var ()
-
-func ReadCSV[T any](filePath string) ([]T, error) {
-	var err error
-	var rows []T
-	
-	body, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	
-	if err = csvutil.Unmarshal(body, &rows); err != nil {
-		return nil, err
-	}
-	
-	return rows, nil
-}
-
-func AppendCSV(filePath string, records []string) error {
-	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-	
-	w := csv.NewWriter(f)
-	if err = w.Write(records); err != nil {
-		return err
-	}
-	
-	w.Flush()
-	
-	return f.Close()
-}
-
-func ValidateCSV[T any](filePath, sep string) error {
-	var data T
-	
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	
-	fileScanner := bufio.NewScanner(file)
-	fileScanner.Split(bufio.ScanLines)
-	if !fileScanner.Scan() {
-		return fmt.Errorf("error empty file: %s", filePath)
-	}
-	
-	fields := strings.Split(fileScanner.Text(), sep)
-	for i, field := range fields {
-		r := []rune(field)
-		r[0] = unicode.ToUpper(r[0])
-		fields[i] = string(r)
-	}
-	
-	valueOf := reflect.ValueOf(data)
-	
-	var valueFields []string
-	for i := 0; i < valueOf.NumField(); i++ {
-		valueFields = append(valueFields, valueOf.Type().Field(i).Name)
-	}
-	
-	for i, field := range fields {
-		if field != valueFields[i] {
-			fmt.Println(field, valueFields[i])
-			return fmt.Errorf("type mismatch")
-		}
-	}
-	
-	return nil
-}
-
-func ReadJSON[T any](filePath string) (T, error) {
-	var data T
-	
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		return data, err
-	}
-	
-	if err = json.Unmarshal(file, &data); err != nil {
-		return data, err
-	}
-	
-	return data, nil
-}
-
-func AppendJSON[T any](filePath string, data T) error {
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-	_ = file
-	
-	var buf bytes.Buffer
-	if err = json.NewEncoder(&buf).Encode(data); err != nil {
-		return err
-	}
-	
-	return nil
-}
-
-func ValidateJSON(filePath string, data any) error {
-	body, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-	
-	valueOf := reflect.ValueOf(data)
-	if valueOf.Kind() == reflect.Ptr {
-		valueOf = valueOf.Elem()
-	}
-	typeOf := valueOf.Type()
-	
-	var fileData map[string]interface{}
-	if err = json.Unmarshal(body, &fileData); err != nil {
-		return err
-	}
-	
-	if reflect.TypeOf(fileData) != typeOf {
-		return errors.New("error validating: data mismatch [json]")
-	}
-	
-	return nil
-}
-
-func WriteJSON(filePath string, data any) error {
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(data); err != nil {
-		return err
-	}
-	return os.WriteFile(filePath, buf.Bytes(), 0777)
-}
-
-func CreateCSV(filePath string, keys [][]string) error {
-	if _, err := os.Stat(filePath); err != nil {
-		var file *os.File
-		
-		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0666)
-		if err != nil {
-			return err
-		}
-		
-		if err = csv.NewWriter(file).WriteAll(keys); err != nil {
-			return err
-		}
-		
-		return file.Close()
-	}
-	
-	return nil
-}
+const (
+	DefaultCSVSep = ","
+)
 
 func CreateFolder(folderPath string) error {
 	if _, err := os.Stat(folderPath); errors.Is(err, os.ErrNotExist) {
@@ -183,7 +35,7 @@ func CreateFolder(folderPath string) error {
 func CreateFile(filePath string) error {
 	if _, err := os.Stat(filePath); err != nil {
 		var file *os.File
-		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, filePerm)
+		file, err = os.Create(filePath)
 		if err != nil {
 			return err
 		}
@@ -192,26 +44,294 @@ func CreateFile(filePath string) error {
 	return nil
 }
 
+// CreateCSV creates a new CSV file at the given filePath and writes the keys to it.
+// It returns an error if there was a problem creating or writing to the file.
+func CreateCSV(filePath string, keys [][]string) error {
+	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+		var file *os.File
+
+		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0666)
+		if err != nil {
+			return err
+		}
+
+		if err = csv.NewWriter(file).WriteAll(keys); err != nil {
+			return err
+		}
+
+		return file.Close()
+	}
+
+	return nil
+}
+
+// ReadCSV reads a CSV file located at the given filePath and unmarshals its contents into a slice of type T.
+// The function returns the unmarshaled rows and any error encountered during the operation.
+func ReadCSV[T any](filePath string) ([]T, error) {
+	var err error
+	var rows []T
+
+	body, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	err = csvutil.Unmarshal(body, &rows)
+	return rows, err
+}
+
+func WriteCSV(filePath string, rows [][]string) error {
+	for _, row := range rows {
+		if err := AppendCSV(filePath, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AppendCSV appends records to a CSV file located at the given filePath.
+func AppendCSV(filePath string, records []string) error {
+	f, err := os.OpenFile(filePath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		return err
+	}
+
+	w := csv.NewWriter(f)
+	if err = w.Write(records); err != nil {
+		return err
+	}
+
+	w.Flush()
+
+	return f.Close()
+}
+
+func tmp(filePath, fieldValue string) error {
+	// Open CSV file
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Read File into a variable
+	lines, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		return err
+	}
+
+	// Loop through lines & turn them into object
+	for i, line := range lines {
+		if line[0] == fieldValue {
+			lines = append(lines[:i], lines[i+1:]...)
+			break
+		}
+	}
+
+	// Open CSV file in WRITE mode
+	f, err = os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Write new datafile
+	err = csv.NewWriter(f).WriteAll(lines)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Removed row from CSV for ", fieldValue)
+
+	return nil
+}
+
+func RemoveCSVRow[T any](filePath string, key any) error {
+	rows, err := ReadCSV[T](filePath)
+	if err != nil {
+		return err
+	}
+
+	log.Println("les rows", rows)
+	for i, row := range rows {
+		if strings.Contains(fmt.Sprint(row), fmt.Sprint(key)) {
+			rows = append(rows[:i], rows[i+1:]...)
+		}
+	}
+
+	log.Println("new rows", rows)
+
+	var rowsStr [][]string
+	for _, row := range rows {
+		rowsStr = append(rowsStr, strings.Split(fmt.Sprint(row), ","))
+	}
+
+	log.Println("rowsStr", rowsStr)
+	if err = WriteCSV(filePath, rowsStr); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("before nrows")
+	nrows, err := ReadCSV[T](filePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("nrows", nrows)
+
+	return nil
+}
+
+func RemoveCSVRowN(filePath string, index int) error {
+	return nil
+}
+
+// ValidateCSV validates the fields of a CSV file against the fields of a struct.
+func ValidateCSV[T any](filePath, sep string) error {
+	var data T
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+
+	fileScanner := bufio.NewScanner(file)
+	fileScanner.Split(bufio.ScanLines)
+	if !fileScanner.Scan() {
+		return fmt.Errorf("error empty file: %s", filePath)
+	}
+
+	fields := strings.Split(fileScanner.Text(), sep)
+	for i, field := range fields {
+		r := []rune(field)
+		r[0] = unicode.ToUpper(r[0])
+		fields[i] = string(r)
+	}
+
+	valueOf := reflect.ValueOf(data)
+
+	var valueFields []string
+	for i := 0; i < valueOf.NumField(); i++ {
+		valueFields = append(valueFields, valueOf.Type().Field(i).Name)
+	}
+
+	for i, field := range fields {
+		if field != valueFields[i] {
+			return fmt.Errorf("field name mismatch")
+		}
+	}
+
+	return nil
+}
+
+// ReadJSON reads a JSON file located at the given filePath and unmarshals its contents into a value of type T.
+// The function returns the unmarshaled data and any error encountered during the operation.
+func ReadJSON[T any](filePath string) (T, error) {
+	var data T
+
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return data, err
+	}
+
+	err = json.Unmarshal(file, &data)
+	return data, err
+}
+
+func AppendJSON[T any](filePath string, data T) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(data); err != nil {
+		return err
+	}
+
+	return WriteJSON(filePath, buf)
+}
+
+func ValidateJSON[T any](filePath string) error {
+	var data T
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	if err = decoder.Decode(&data); err != nil {
+		return fmt.Errorf("error while decoding JSON: %w", err)
+	}
+
+	jsonFields := reflect.ValueOf(data).Elem().Type()
+
+	structFields := reflect.TypeOf(new(T)).Elem()
+
+	for i := 0; i < structFields.NumField(); i++ {
+		structField := structFields.Field(i)
+		structFieldName := structField.Name
+
+		jsonFieldName := structFieldName
+		if tag, ok := structField.Tag.Lookup("json"); ok {
+			jsonFieldName = tag
+		}
+
+		jsonFieldNameRunes := []rune(jsonFieldName)
+		if len(jsonFieldNameRunes) > 0 {
+			jsonFieldNameRunes[0] = unicode.ToLower(jsonFieldNameRunes[0])
+		}
+
+		jsonField, ok := jsonFields.FieldByName(string(jsonFieldNameRunes))
+
+		if !ok {
+			return fmt.Errorf("json field '%s' not found", structFieldName)
+		}
+
+		if jsonField.Type != structField.Type {
+			return fmt.Errorf("field type mismatch '%s': JSON has '%s', struct has '%s'",
+				structFieldName, jsonField.Type, structField.Type)
+		}
+	}
+
+	return nil
+}
+
+func WriteJSON(filePath string, data any) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(data); err != nil {
+		return err
+	}
+	return os.WriteFile(filePath, buf.Bytes(), filePerm)
+}
+
+func RemoveJSONLine(filePath, key string) error {
+	content, err := ReadJSON[map[string]any](filePath)
+	if err != nil {
+		return err
+	}
+
+	delete(content, key)
+
+	return WriteJSON(filePath, content)
+}
+
 func CreateYAML[T any](filePath string, dataEncoded T) error {
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
-	
+
 	defer file.Close()
-	
+
 	err = yaml.NewEncoder(file).Encode(&dataEncoded)
 	return err
 }
 
 func ReadYAML[T any](filePath string) (T, error) {
 	var data T
-	
+
 	file, err := os.OpenFile(filePath, os.O_RDWR, 0644)
 	if err != nil {
 		return data, err
 	}
-	
+
 	err = yaml.NewDecoder(file).Decode(&data)
 	return data, err
 }
@@ -225,28 +345,60 @@ func AppendYAML[T any](filePath string) error {
 	return nil
 }
 
-func ValidateYAML(filePath string, data any) error {
-	body, err := os.ReadFile(filePath)
+func ValidateYAML[T any](filePath string) error {
+	var data T
+
+	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
-	valueOf := reflect.ValueOf(data)
-	if valueOf.Kind() == reflect.Ptr {
-		valueOf = valueOf.Elem()
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(&data); err != nil {
+		return fmt.Errorf("error while decoding YAML: %w", err)
 	}
-	typeOf := valueOf.Type()
-	
-	var fileData map[string]interface{}
-	if err = yaml.Unmarshal(body, &fileData); err != nil {
-		return err
+
+	yamlFields := reflect.ValueOf(data).Elem().Type()
+
+	structFields := reflect.TypeOf(new(T)).Elem()
+
+	for i := 0; i < structFields.NumField(); i++ {
+		structField := structFields.Field(i)
+		structFieldName := structField.Name
+
+		yamlFieldName := structFieldName
+		if tag, ok := structField.Tag.Lookup("yaml"); ok {
+			yamlFieldName = tag
+		}
+
+		yamlFieldNameRunes := []rune(yamlFieldName)
+		if len(yamlFieldNameRunes) > 0 {
+			yamlFieldNameRunes[0] = unicode.ToLower(yamlFieldNameRunes[0])
+		}
+
+		yamlField, ok := yamlFields.FieldByName(string(yamlFieldNameRunes))
+
+		if !ok {
+			return fmt.Errorf("yaml field '%s' not found", structFieldName)
+		}
+
+		if yamlField.Type != structField.Type {
+			return fmt.Errorf("field type mismatch '%s': YAML has '%s', struct has '%s'",
+				structFieldName, yamlField.Type, structField.Type)
+		}
 	}
-	
-	if reflect.TypeOf(fileData) != typeOf {
-		return errors.New("error validating: data mismatch [yaml]")
-	}
-	
+
 	return nil
 }
+
+func CreateExcel() {}
+
+func ReadExcel() {}
+
+func AppendExcel() {}
+
+func ValidateExcel() {}
 
 func CreateLogFile(filePath string) {
 	os.Create(filePath)
