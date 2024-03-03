@@ -17,11 +17,8 @@ import (
 )
 
 const (
-	folderPerm = 0777
-	filePerm   = 0777
-)
-
-const (
+	folderPerm    = 0777
+	filePerm      = 0777
 	DefaultCSVSep = ","
 )
 
@@ -65,8 +62,8 @@ func CreateCSV(filePath string, keys [][]string) error {
 	return nil
 }
 
-// ReadCSV reads a CSV file located at the given filePath and unmarshals its contents into a slice of type T.
-// The function returns the unmarshaled rows and any error encountered during the operation.
+// ReadCSV reads a CSV file located at the given filePath and unmarshal its contents into a slice of type T.
+// The function returns the unmarshalled rows and any error encountered during the operation.
 func ReadCSV[T any](filePath string) ([]T, error) {
 	var err error
 	var rows []T
@@ -185,6 +182,10 @@ func RemoveCSVRowN(filePath string, index int) error {
 	return nil
 }
 
+func RemoveCSVRowContains(key string) {}
+
+func RemoveCSVRowsContains(key string) {}
+
 // ValidateCSV validates the fields of a CSV file against the fields of a struct.
 func ValidateCSV[T any](filePath, sep string) error {
 	var data T
@@ -238,8 +239,8 @@ func ReadJSON[T any](filePath string) (T, error) {
 }
 
 func AppendJSON[T any](filePath string, data T) error {
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(data); err != nil {
+	buf, err := json.Marshal(data)
+	if err != nil {
 		return err
 	}
 
@@ -301,13 +302,18 @@ func WriteJSON(filePath string, data any) error {
 	return os.WriteFile(filePath, buf.Bytes(), filePerm)
 }
 
+// RemoveJSONLine removes a specific line in JSON
 func RemoveJSONLine(filePath, key string) error {
 	content, err := ReadJSON[map[string]any](filePath)
 	if err != nil {
 		return err
 	}
 
-	delete(content, key)
+	for k := range content {
+		if k == key {
+			delete(content, k)
+		}
+	}
 
 	return WriteJSON(filePath, content)
 }
@@ -390,16 +396,4 @@ func ValidateYAML[T any](filePath string) error {
 	}
 
 	return nil
-}
-
-func CreateExcel() {}
-
-func ReadExcel() {}
-
-func AppendExcel() {}
-
-func ValidateExcel() {}
-
-func CreateLogFile(filePath string) {
-	os.Create(filePath)
 }
