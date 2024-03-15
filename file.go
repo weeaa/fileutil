@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"github.com/jszwec/csvutil"
 	"gopkg.in/yaml.v3"
+	"io"
 	"log"
+	"math/rand"
 	"os"
 	"reflect"
 	"strings"
@@ -178,13 +180,40 @@ func RemoveCSVRow[T any](filePath string, key any) error {
 	return nil
 }
 
-func RemoveCSVRowN(filePath string, index int) error {
+/*
+func RemoveCSVRowN[T any](filePath string, index int) error {
+	rows, err := ReadCSV[T](filePath)
+	if err != nil {
+		return err
+	}
+
+	for i, row := range rows {
+		_ = row
+		if i == index {
+
+		}
+	}
+
 	return nil
 }
+*/
 
-func RemoveCSVRowContains(key string) {}
+// func RemoveCSVRowContains(key string) {}
 
-func RemoveCSVRowsContains(key string) {}
+/*
+func RemoveCSVRowsContains[T any](filePath, key string) error {
+	rows, err := ReadCSV[T](filePath)
+	if err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		_ = row
+	}
+
+	return nil
+}
+*/
 
 // ValidateCSV validates the fields of a CSV file against the fields of a struct.
 func ValidateCSV[T any](filePath, sep string) error {
@@ -358,10 +387,11 @@ func ValidateYAML[T any](filePath string) error {
 	if err != nil {
 		return err
 	}
+
 	defer file.Close()
 
 	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(&data); err != nil {
+	if err = decoder.Decode(&data); err != nil {
 		return fmt.Errorf("error while decoding YAML: %w", err)
 	}
 
@@ -396,4 +426,38 @@ func ValidateYAML[T any](filePath string) error {
 	}
 
 	return nil
+}
+
+func UnmarshalJSONToStruct[T any](data io.ReadCloser) (T, error) {
+	var t T
+	b, err := io.ReadAll(data)
+	if err != nil {
+		return t, err
+	}
+	err = json.Unmarshal(b, &t)
+	return t, err
+}
+
+func ReadProxyFile(path string) (proxies []string, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	fileScanner := bufio.NewScanner(f)
+	fileScanner.Split(bufio.ScanLines)
+	for fileScanner.Scan() {
+		proxies = append(proxies, fileScanner.Text())
+	}
+
+	for i := range proxies {
+		r := rand.Intn(i + 1)
+		proxies[i], proxies[r] = proxies[r], proxies[i]
+	}
+
+	if len(proxies) == 0 {
+		return nil, errors.New("empty proxy list")
+	}
+
+	return proxies, nil
 }
